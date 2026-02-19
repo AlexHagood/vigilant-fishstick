@@ -23,7 +23,7 @@ class DatabaseConnection:
     try:
       self.engine = create_engine(f'mysql+mysqlconnector://{self.user}:{self.password}@{self.host}/{self.database}')
       print("Connection established successfully!")
-    except mysql.connector.Error as err:
+    except Exception as err:
       print(err)
       
   def seed_items_table(self, items_df):
@@ -44,6 +44,14 @@ class DatabaseConnection:
       
   def seed_item_crate_mapping_table(self, prices_df):
     table_name="item_crate_mapping"
+    try:
+      prices_df.to_sql(name=table_name, con=self.engine, if_exists='append', index=False)
+      print(f"Data imported successfully into {self.database}.{table_name}")
+    except Exception as e:
+      print(e)
+      
+  def seed_item_collection_mapping_table(self, prices_df):
+    table_name="item_collection_mapping"
     try:
       prices_df.to_sql(name=table_name, con=self.engine, if_exists='append', index=False)
       print(f"Data imported successfully into {self.database}.{table_name}")

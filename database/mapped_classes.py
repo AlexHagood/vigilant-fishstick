@@ -22,13 +22,12 @@ class ItemMetadata(Base):
         return f"<ItemMetadata(name={self.name!r}, weapon={self.weapon!r}, rarity={self.rarity!r})>"
       
       
-
 class ItemMarketData(Base):
     __tablename__ = "item_market_data"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text)
-    hash_name: Mapped[str] = mapped_column(Text, index=True)
+    hash_name: Mapped[str] = mapped_column(Text, index=True, primary_key=True)
+    wear: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True, primary_key=True)
     sell_listings: Mapped[int] = mapped_column(BigInteger)
     sell_price: Mapped[int] = mapped_column(BigInteger)
     sell_price_text: Mapped[str] = mapped_column(Text)
@@ -36,15 +35,25 @@ class ItemMarketData(Base):
     app_name: Mapped[str] = mapped_column(Text)
     app_icon: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     asset_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    base_name: Mapped[str] = mapped_column(Text)
 
     def __repr__(self):
-        return f"<ItemMarketData(hash_name={self.hash_name!r}, sell_price={self.sell_price!r}, listings={self.sell_listings!r})>"
+        return f"<ItemMarketData(hash_name={self.hash_name!r}, wear={self.wear!r}, sell_price={self.sell_price!r}, listings={self.sell_listings!r})>"
       
 class ItemCrateMapping(Base):
     __tablename__ = "item_crate_mapping"
 
     name: Mapped[str] = mapped_column(Text, primary_key=True)
     crates: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    def __repr__(self):
+        return f"<ItemCrateMapping(name={self.name!r}, crate={self.crates!r})>"
+      
+class ItemCollectionMapping(Base):
+    __tablename__ = "item_collection_mapping"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    collections: Mapped[str] = mapped_column(Text, primary_key=True)
 
     def __repr__(self):
         return f"<ItemCrateMapping(name={self.name!r}, crate={self.crates!r})>"
