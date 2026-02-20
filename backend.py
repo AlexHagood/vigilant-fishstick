@@ -5,7 +5,23 @@ import ast
 from collections import defaultdict
 
 class Skin:
-    """Represents a CS:GO skin item with all its properties"""
+    """
+    Represents a CS:GO skin item with all its properties.
+    
+    Attributes:
+        id (int): Unique identifier for this skin
+        name (str): Full name of the skin (e.g., "AK-47 | Redline")
+        max_float (float): Maximum float value for this skin (typically <= 1.0)
+        min_float (float): Minimum float value for this skin (typically >= 0.0)
+        crates (List[str]): List of crate names this skin can drop from
+        rarity (str): Rarity tier (e.g., "Mil-Spec Grade", "Classified", "Covert")
+        weapon (str): Weapon type (e.g., "AK-47", "M4A4")
+        stattrack (bool): Whether this is a StatTrak variant
+        collection (str): Collection name this skin belongs to
+        float (Optional[float]): Float value for this specific instance (if set)
+    
+    Note: StatTrak and non-StatTrak versions are considered distinct skins.
+    """
     
     def __init__(self, item_id: int, backend: 'Backend'):
         self.backend = backend
@@ -48,7 +64,16 @@ class Skin:
     
 
     def get_tradeups(self) -> List['Skin']:
-        """Get possible trade-up outputs for this skin"""
+        """
+        Get possible trade-up outputs for this skin.
+        
+        Returns all skins in the same collection as this skin, but at the next
+        higher rarity tier. These are the possible outputs if this skin is used
+        as an input in a trade-up contract.
+        
+        Returns:
+            List of Skin objects representing possible trade-up outcomes
+        """
         next_rarity = Backend.next_rarity(self.rarity)
         if not self.collection:
             return []
@@ -134,38 +159,38 @@ class Backend:
         """
         Calculate the output float value for a trade-up.
         
-        Formula: y = (max - min) * x + min
+        Formula: f_out = min_f + f_bar * (max_f - min_f)
         where:
-        - x = average float value of input skins
-        - y = output float value
-        - min = minimum float of output skin
-        - max = maximum float of output skin
+        - f_bar = average float value of input skins
+        - f_out = output float value
+        - min_f = minimum float of output skin
+        - max_f = maximum float of output skin
+        
+        This remaps the average input float from [0,1] into the valid
+        float range [min_f, max_f] for the output skin.
         
         Args:
             input_skins: List of 10 input skins with their float values
             output_skin: The output skin to calculate float for
             
         Returns:
-            The calculated output float value
+            The calculated output float value, or None if input floats not set
         """
-        # Calculate average float of input skins
+        # Calculate average float of input skins (f_bar)
         input_floats = [skin.float for skin in input_skins if skin.float is not None]
         if not input_floats:
             return None
         
-        avg_input_float = sum(input_floats) / len(input_floats)
+        f_bar = sum(input_floats) / len(input_floats)
         
         # Get output skin's float range
-        min_float = output_skin.min_float
-        max_float = output_skin.max_float
-        float_range = max_float - min_float
+        min_f = output_skin.min_float
+        max_f = output_skin.max_float
         
-        # Calculate output float: y = range * x + min
-        output_float = float_range * avg_input_float + min_float
+        # Calculate output float: f_out = min_f + f_bar * (max_f - min_f)
+        f_out = min_f + f_bar * (max_f - min_f)
         
-        return output_float
-    
-    
+        return f_out    
     def analyze_selected_skins(self, skins: List[Skin]) -> str:
         """Analyze the selected skins with their float values and return a description"""
         if not skins:
@@ -210,32 +235,62 @@ class Backend:
         return result
     
     @staticmethod
-    def get_tradeup_outcomes(items : list[Skin]) -> List[Tuple[Skin, float]]:
-        """Given a list of Skin items, return a list of possible trade-up outcomes with probabilities"""
+    def get_tradeup_outcomes(items: list[Skin]) -> List[Tuple[Skin, float]]:
+        """
+        Given a list of input skins, return possible trade-up outcomes with probabilities.
+        
+        For each possible output skin s:
+        P(s_out = s) = (n_c / 10) * (1 / |S(c, r_out)|)
+        
+        where:
+        - n_c = number of input skins from collection c = collection(s)
+        - |S(c, r_out)| = number of skins in collection c at rarity r_out
+        - r_out = input rarity + 1
+        
+        Args:
+            items: List of input skins (must all have same rarity, 10 items for most rarities, 5 for Covert)
+            
+        Returns:
+            List of (Skin, probability) tuples sorted by probability descending
+            
+        Raises:
+            ValueError: If items have different rarities or invalid count
+        """
         if not items:
             return []
         
+        # Validate all items have the same rarity
         rarities = [skin.rarity for skin in items]
         if len(set(rarities)) != 1:
             raise ValueError("All items must have the same rarity for trade-up analysis")
         
-        if not (len(items) == 5 and rarities[0] == "Covert" or len(items) == 10 and rarities[0] in ["Consumer Grade", "Industrial Grade", "Mil-Spec Grade", "Restricted", "Classified"]):
-            raise ValueError("Trade-ups require exactly 10 items of the same rarity (5 for Covert)")
+        # Validate item count (10 for most rarities, 5 for Covert)
+        rarity = rarities[0]
+        expected_count = 5 if rarity == "Covert" else 10
+        if len(items) != expected_count:
+            raise ValueError(f"Trade-ups require exactly {expected_count} items for {rarity} rarity")
         
-        next_rarity = Backend.next_rarity(rarities[0])
+        # Calculate probabilities for each possible output skin
+        # P(s_out = s) = (n_c / N) * (1 / |S(c, r_out)|)
+        probabilities = defaultdict(float)
         
-        # Get all target items in the next rarity that match the collections of the input skins
-        target_items = []
-        for skin in items:
-            tradeups = skin.get_tradeups()
-            t = [((1 / len(tradeups) ) * (1 / len(items)), tradeup) for tradeup in tradeups]
-            target_items.extend(t)
-
-        # Combine target_items based on the skin, summing the probabilities
-        combined = defaultdict(float)
-        for prob, skin in target_items:
-            combined[skin] += prob
+        for input_skin in items:
+            # Get all possible outputs from this input's collection
+            possible_outputs = input_skin.get_tradeups()
+            
+            if not possible_outputs:
+                continue
+            
+            # n_c / N: probability of selecting this collection
+            collection_prob = 1.0 / len(items)
+            
+            # 1 / |S(c, r_out)|: uniform selection within collection
+            skin_prob = 1.0 / len(possible_outputs)
+            
+            # Add probability contribution to each possible output
+            for output_skin in possible_outputs:
+                probabilities[output_skin] += collection_prob * skin_prob
 
         # Sort by probability descending
-        sorted_items = sorted(combined.items(), key=lambda x: x[1], reverse=True)
-        return sorted_items
+        sorted_outcomes = sorted(probabilities.items(), key=lambda x: x[1], reverse=True)
+        return sorted_outcomes
